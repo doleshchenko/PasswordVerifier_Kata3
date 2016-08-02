@@ -1,38 +1,63 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace PasswordVerifier
 {
     public class PasswordVerifier
     {
+        private readonly Dictionary<RuleKey, Func<string, bool>> _validationStrategies;
+
+        public PasswordVerifier()
+        {
+            _validationStrategies = new Dictionary<RuleKey, Func<string, bool>>
+            {
+                [RuleKey.NotNull] = password => !string.IsNullOrEmpty(password),
+                [RuleKey.Length] = password => password.Length > 8,
+                [RuleKey.ContainsUpperCase] = password => password.Any(char.IsUpper),
+                [RuleKey.ContainsLowerCase] = password => password.Any(char.IsLower),
+                [RuleKey.ContainsNumber] = password => password.Any(char.IsNumber)
+            };
+        }
+
         public bool Verify(string password)
         {
-            if (string.IsNullOrEmpty(password))
+            return !VerifyPassword(password, new[] {RuleKey.NotNull, RuleKey.Length, RuleKey.ContainsUpperCase, RuleKey.ContainsLowerCase, RuleKey.ContainsNumber}).Any();
+        }
+
+        public void Verify(string password, RuleKey[] ruleKeys)
+        {
+            var validationResult = VerifyPassword(password, ruleKeys);
+            if (validationResult.Any())
             {
-                return false;
+                throw new PasswordVerificationException($"Validation rule(s) were violated: {string.Join(",", validationResult)}");
             }
-            if (password.Length < 8)
+        }
+
+        private RuleKey[] VerifyPassword(string password, RuleKey[] ruleKeys)
+        {
+            var violatedRules = new List<RuleKey>();
+            foreach (var ruleKey in ruleKeys)
             {
-                return false;
-            }
-            if (!password.Any(char.IsUpper))
-            {
-                return false;
-            }
-            if (!password.Any(char.IsLower))
-            {
-                return false;
-            }
-            if (!password.Any(char.IsNumber))
-            {
-                return false;
+                bool validationResult = false;
+                try
+                {
+                    validationResult = _validationStrategies[ruleKey](password);
+                }
+                catch (Exception e)
+                {
+                    //TODO: add logging
+                }
+                finally
+                {
+                    if (!validationResult)
+                    {
+                        violatedRules.Add(ruleKey);
+                    }
+                }
             }
 
-            return true;
+            return violatedRules.ToArray();
         }
     }
 }
